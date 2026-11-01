@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Apply Studio</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><div class="mark">a.</div><div><h1>Apply Studio</h1><p>Your personal job-search companion</p></div></header>
+  <nav aria-label="Companion sections"><button class="tab active" data-panel="capture" aria-pressed="true">Save a job</button><button class="tab" data-panel="fill" aria-pressed="false">Fill a form</button><button class="tab" data-panel="connect" aria-pressed="false">Connect</button></nav>
+  <main>
+    <section id="capture" class="panel">
+      <h2>A good opportunity? Keep it.</h2><p>Capture this page, check the details, and save it to your local workspace.</p>
+      <button id="capture-button" class="primary">Read this page</button>
+      <form id="job-form" hidden>
+        <label>Role<input name="title" required maxlength="300"></label>
+        <label>Company<input name="company" required maxlength="300" placeholder="Add the company name"></label>
+        <label>Listing URL<input name="url" type="url" maxlength="2000"></label>
+        <label>Description<textarea name="description" rows="7" maxlength="50000"></textarea></label>
+        <button type="submit" class="primary">Save to Apply Studio</button>
+      </form>
+    </section>
+    <section id="fill" class="panel" hidden>
+      <h2>Review first. Fill second.</h2><p>Match your profile to empty fields on this page. Passwords and sensitive identity fields are excluded. Nothing is submitted.</p>
+      <button id="preview-button" class="primary">Preview suggestions</button>
+      <div id="suggestions" aria-live="polite"></div>
+      <button id="fill-button" class="primary" hidden>Fill selected fields</button>
+      <p class="fine">Works on the current page’s main frame. Review every field before submitting an application yourself.</p>
+    </section>
+    <section id="connect" class="panel" hidden>
+      <h2>Connect your local workspace</h2><p>Run Apply Studio on this computer, then copy its pairing token here.</p>
+      <form id="connection-form">
+        <label>Server URL<input name="baseURL" value="http://127.0.0.1:3000" required></label>
+        <label>Pairing token<input name="token" type="password" autocomplete="off" required></label>
+        <button type="submit" class="primary">Save &amp; test connection</button>
+      </form>
+      <p class="fine">Only localhost:3000 or 127.0.0.1:3000 is supported. The token stays in this extension’s local storage. This extension does not connect to the original Amploy service.</p>
+    </section>
+    <div id="status" role="status" aria-live="polite"></div>
+  </main>
+  <footer>Personal workspace · No analytics · No auto-submit</footer>
+  <script type="module" src="popup.js"></script>
+</body></html>
