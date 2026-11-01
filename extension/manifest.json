@@ -1,9 +1,37 @@
 {
   "manifest_version": 3,
-  "name": "Apply Studio — Personal Companion",
-  "version": "0.1.0",
-  "description": "Save a job to your local Apply Studio and review profile suggestions before filling a form.",
-  "permissions": ["activeTab", "scripting", "storage"],
-  "host_permissions": ["http://127.0.0.1:3000/*", "http://localhost:3000/*"],
-  "action": {"default_popup": "popup.html", "default_title": "Apply Studio"}
+  "name": "Apply Studio \u2014 Personal Companion",
+  "version": "0.2.0",
+  "description": "Automatically fill application details and draft AI answers from your own profile. Review before submitting.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Apply Studio"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "auto-core.js",
+        "auto.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
 }

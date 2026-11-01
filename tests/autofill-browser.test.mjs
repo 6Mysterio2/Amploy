@@ -1,0 +1,80 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {mkdtemp,rm,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join,resolve} from 'node:path';
+import {chromium} from 'playwright-core';
+import {createApp} from '../server.mjs';
+
+const listen=s=>new Promise(r=>s.listen(0,'127.0.0.1',()=>r(`http://127.0.0.1:${s.address().port}`)));
+const close=s=>new Promise(r=>s.close(r));
+
+test('content/background scripts automatically fill forms via simulated Chrome messaging and real local API',{timeout:90000},async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'apply-auto-chrome-'));let context,release;let stored={},listener;
+ globalThis.chrome={runtime:{id:'a'.repeat(32),onMessage:{addListener:fn=>listener=fn}},storage:{local:{get:async()=>stored,set:async value=>{stored={...stored,...value};}}}};
+ await import('../extension/background.js');
+ const calls=[];
+ const gate=new Promise(r=>release=r);
+ const provider=http.createServer(async(req,res)=>{
+  let raw='';for await(const b of req)raw+=b;
+  const wire=JSON.parse(raw),payload=JSON.parse(wire.messages.at(-1).content);calls.push(payload);
+  if(calls.length===1)await gate;
+  const answers=payload.questions.map(q=>({id:q.id,text:/employer/i.test(q.label)?'Example Labs':'I designed accessible interfaces and conducted user research at Example Labs. This experience is relevant to the product design role.'}));
+  res.setHeader('Content-Type','application/json');res.end(JSON.stringify({choices:[{message:{content:JSON.stringify({answers})}}]}));
+ });
+ const fixture=http.createServer((req,res)=>{
+  res.setHeader('Content-Type','text/html');
+  res.end(`<!doctype html><html><head><title>Product designer job application</title></head><body><h1>Apply for Product Designer</h1><div id="job-description">Design accessible interfaces and research user needs at Example Labs.</div><form id="application"><label>Full name<input name="fullName" id="name"></label><label>Email<input type="email" id="email"></label><label>City<input id="city" name="city"></label><label>Current employer<input id="employer" name="employer"></label><label>Phone<input type="tel" id="phone" value="already entered"></label><label>Country<select id="country" autocomplete="country-name"><option value="">Select</option><option value="HK">Hong Kong</option></select></label><fieldset><legend>Are you authorized to work?</legend><label><input type="radio" name="authorization" id="yes" value="yes">Yes</label><label><input type="radio" name="authorization" value="no">No</label></fieldset><label>Why are you interested in this role?<textarea id="essay"></textarea></label><label>Describe your relevant experience<textarea id="editing"></textarea></label><label>Why should we hire you?<textarea id="existing">My own written answer</textarea></label><label>Password<input id="password" type="password"></label><label>Social security number<input id="ssn"></label><label><input type="checkbox" id="consent">I agree to the terms</label><button>Submit application</button></form><script>window.submissions=0;document.querySelector('form').onsubmit=e=>{e.preventDefault();window.submissions++};</script></body></html>`);
+ });
+ const {server}=createApp({dbPath:join(dir,'state.sqlite'),env:{}});
+ const base=await listen(server),providerBase=await listen(provider),pageBase=await listen(fixture);
+ const api=async(path,method='GET',body)=>{const r=await fetch(base+path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});assert.ok(r.ok,await r.clone().text());return r.json();};
+ try{
+  await api('/api/profile','PUT',{fullName:'Alex Taylor',email:'alex@example.test',addressCity:'Hong Kong',addressCountry:'Hong Kong',workAuthorized:'yes',summary:'Product designer at Example Labs.',resumeText:'Designed accessible interfaces and conducted user research at Example Labs.'});
+  context=await chromium.launchPersistentContext(join(dir,'chrome'),{executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});
+  await context.exposeBinding('studioBridge',(source,message)=>new Promise(resolve=>listener(message,{id:'a'.repeat(32),tab:{id:1},url:source.frame.url()},resolve)));
+  await context.addInitScript(()=>{window.chrome={runtime:{sendMessage:message=>window.studioBridge(message)},storage:{onChanged:{addListener:fn=>window.studioStorageListener=fn}}};});
+  await context.addInitScript({path:resolve('extension/auto-core.js')});
+  await context.addInitScript({content:'window.addEventListener("DOMContentLoaded",()=>{'+await readFile(resolve('extension/auto.js'),'utf8')+'});'});
+  const app=await context.newPage();await app.goto(base);
+  await app.locator('[data-page="assistant"]').click();
+  await app.getByLabel('Provider base URL').fill(providerBase+'/v1');
+  await app.getByLabel('Model ID').fill('fixture-model');
+  await app.getByLabel('API key',{exact:true}).fill('local-test-key-not-real');
+  await app.getByRole('button',{name:'Save AI connection',exact:true}).click();
+  await app.waitForFunction(()=>document.querySelector('#toast').textContent.includes('AI connection saved'));
+  assert.equal(await app.getByLabel('API key',{exact:true}).inputValue(),'');
+  const {token}=await api('/api/extension-token');
+  stored={applyStudioConnection:{baseURL:base,token,autoAssist:true,pausedSites:[]}};
+  const page=await context.newPage();await page.goto(pageBase+'/application');
+  await page.waitForFunction(()=>document.querySelector('#email').value==='alex@example.test',{},{timeout:15000});
+  await page.waitForFunction(()=>document.querySelector('#apply-studio-assistant')?.dataset.state==='drafting');
+  await page.locator('#editing').fill('I am writing this myself while the model is working.');
+  release();
+  await page.waitForFunction(()=>document.querySelector('#essay').value.includes('accessible interfaces'),{},{timeout:15000});
+  assert.equal(await page.locator('#name').inputValue(),'Alex Taylor');
+  assert.equal(await page.locator('#city').inputValue(),'Hong Kong');
+  assert.equal(await page.locator('#country').inputValue(),'HK');
+  assert.equal(await page.locator('#yes').isChecked(),true);
+  assert.equal(await page.locator('#employer').inputValue(),'Example Labs');
+  assert.equal(await page.locator('#phone').inputValue(),'already entered');
+  assert.equal(await page.locator('#editing').inputValue(),'I am writing this myself while the model is working.');
+  assert.equal(await page.locator('#existing').inputValue(),'My own written answer');
+  assert.equal(await page.locator('#password').inputValue(),'');assert.equal(await page.locator('#ssn').inputValue(),'');assert.equal(await page.locator('#consent').isChecked(),false);
+  assert.equal(await page.evaluate(()=>window.submissions),0);
+  assert.ok(!JSON.stringify(calls).includes('already entered'));assert.ok(!JSON.stringify(calls).includes('My own written answer'));
+  const callsBefore=calls.length;
+  await page.evaluate(()=>{const label=document.createElement('label');label.textContent='Describe a project relevant to this position';const field=document.createElement('textarea');field.id='next-step';label.append(field);document.querySelector('form').append(label);});
+  await page.waitForFunction(()=>document.querySelector('#next-step').value.includes('user research'),{},{timeout:15000});
+  assert.ok(calls.length>callsBefore);
+  const after=calls.length;
+  await page.waitForTimeout(1200);assert.equal(calls.length,after,'stable page should not repeatedly invoke the model');
+  await page.locator('#apply-studio-assistant').locator('[data-action="undo"]').click();
+  assert.equal(await page.locator('#essay').inputValue(),'');assert.equal(await page.locator('#email').inputValue(),'');
+  assert.equal(await page.locator('#editing').inputValue(),'I am writing this myself while the model is working.');
+  await page.locator('#apply-studio-assistant').locator('[data-action="pause"]').click();
+  await page.reload();await page.waitForTimeout(1200);assert.equal(await page.locator('#email').inputValue(),'');
+  assert.equal(await page.evaluate(()=>window.submissions),0);
+ }finally{release();await context?.close();await Promise.all([close(server),close(provider),close(fixture)]);await rm(dir,{recursive:true,force:true});delete globalThis.chrome;}
+});

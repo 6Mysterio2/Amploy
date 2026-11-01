@@ -34,19 +34,23 @@ That starts the app on the cloud machine, not on your Mac. This onboarding chat 
 - Text download and browser print-to-PDF for documents.
 - Optional encrypted login vault. Your passphrase derives an AES-GCM key in the browser; the server stores ciphertext. The key is not saved. Keep your passphrase: there is no recovery service.
 - JSON backup/restore. Profile, jobs, and documents are plaintext in the backup; only vault contents are encrypted. Keep backups private.
-- A separate Chrome extension to capture the active job page and fill reviewed empty contact fields. It does not submit applications or fill passwords.
+- A Chrome extension that detects application pages, fills empty personal fields from your profile, and automatically drafts open-ended answers with your configured AI provider. Later form steps are observed too. It does not submit applications or overwrite existing writing. An on-page panel offers pause, retry, and undo.
 
 ## Chrome companion
 
 Run this app on the same computer as Chrome. Open Chrome's extensions page, enable Developer mode, choose **Load unpacked**, and select the `extension/` directory. Open the app's extension settings and copy the pairing token into the extension popup, together with the app's local server address. The token grants access to your profile and job creation; do not share it.
 
-Capture only pages you choose. Review the extracted job details before saving, and review autofill suggestions before applying them. Some Chrome internal pages, store pages, PDFs, cross-origin embedded frames, select widgets, and nonstandard forms cannot be filled. The initial companion uses a popup rather than reproducing Amploy's injected drawer. The encrypted vault is manual copy/paste and is not exposed to the extension.
+Enable **Automatic assistance** in the extension's Connect panel. On an application page, the assistant fills known personal fields first, then inserts AI drafts into empty open-ended fields. Standard text inputs, textareas, editable areas, and straightforward selects/radio choices are supported; custom widgets and inaccessible embedded forms may still need manual input. Work authorization, sponsorship, and salary answers are used only when explicitly saved and unambiguously matched. Unsupported or unknown information stays blank. Always review the result. The encrypted vault remains manual copy/paste and is not exposed to the extension.
+
+The extension now needs website access so it can detect forms when you land on a page. Updating an existing installation requires clicking **Reload** on `chrome://extensions`, accepting any changed access request, and refreshing application tabs. Assistance can be paused globally in the popup or per site using the on-page panel. Job capture remains a deliberate popup action.
 
 ## Optional AI drafts
 
-Copy `.env.example` to `.env`. Set `APPLY_STUDIO_AI_API_KEY` to your provider key and `APPLY_STUDIO_AI_MODEL` to a supported model ID. The default endpoint is OpenAI's `/v1` API; another HTTPS provider may be used if it implements `POST /chat/completions` with the same request/response format. Restart `npm start` after changing these settings. The server loads `.env`; the key is never returned to the browser, stored in workspace exports, or included in prompts.
+Open **AI assistant** in the app, enter your provider's base URL, model ID and API key, then save. Use **Test AI drafting** to check the connection with your profile. The key is stored in the local SQLite database separately from exported workspace data, never returned by the API, and never sent to application pages. Keep the database private. Without a provider key, personal-detail autofill still works but open-ended AI answers are unavailable.
 
-With a key configured, generating a document sends the profile's name/headline/summary/skills/resume text and the selected job title/company/description to that provider. Vault contents and application eligibility fields are not sent. Provider usage may incur charges. With no key, no AI request is made. Failed provider calls leave saved data unchanged and show an error instead of silently substituting a template. Matching remains a local keyword calculation. The optional adapter was tested against a local protocol fixture; real provider credentials and model quality were not verified in this environment.
+Alternatively, copy `.env.example` to `.env` and set `APPLY_STUDIO_AI_API_KEY`, `APPLY_STUDIO_AI_MODEL`, and optionally `APPLY_STUDIO_AI_BASE_URL`. Environment configuration takes precedence over in-app settings; restart the server after changing `.env`. The default endpoint is OpenAI's `/v1` API; other providers must implement compatible `POST /chat/completions` requests/responses. Each question batch uses JSON answers; a provider that does not follow this format returns an explicit error instead of filling arbitrary text.
+
+With a key configured, document generation sends the profile's name/headline/summary/skills/resume text and the selected job description to that provider. Automatic question drafting sends those same professional details, empty-field question labels, and limited job context. The extension does not serialize filled form values, passwords, cookies, or complete page HTML. Vault contents and application eligibility fields are not sent. Provider usage may incur charges. With no key, no AI request is made. Responses take as long as the configured provider needs; they are not guaranteed instantaneous. Failed calls show an on-page error with explicit Retry. Matching remains local keyword overlap. Model transport is tested using a local provider fixture; real credentials and model quality are not verified here.
 
 ## Persistence and tests
 
@@ -57,7 +61,11 @@ npm test
 CHROMIUM_PATH=/path/to/chromium npm run test:browser
 ```
 
-The browser test requires an installed Chromium-compatible browser. In the prepared cloud host it is `/usr/bin/chromium`. Tests use temporary databases and do not overwrite your saved jobs. Validation: 10 backend/adapter/extension mapping tests and 2 Chromium workflow tests passed. Chromium tests exercise the extension's actual extraction/fill functions, not a complete installed toolbar-popup session on third-party portals.
+The browser tests require an installed Chromium-compatible browser. In the prepared cloud host it is `/usr/bin/chromium`. Tests use temporary databases and browser profiles, executing the real extension content/background scripts with simulated Chrome messaging against local application fixtures and a mock AI provider. The managed cloud browser blocks unpacked extension installation, so a fully installed toolbar session was not verified here. The tests do not overwrite saved jobs or submit third-party applications, and do not establish compatibility with every job portal.
+
+## Updating from version 0.1
+
+Stop the running server with Ctrl+C, then update the source files. Preserve your existing `data/` directory and `.env` if present. If using a fresh ZIP in a new directory, copy those from the old folder while the server is stopped. Run `npm ci` and `npm start` in the updated directory. In Chrome, reload the unpacked extension (or remove the old entry and load the new directory), pair again if needed, and refresh application tabs. Configure your model/key through **AI assistant**, then enable **Automatic assistance** in the extension's Connect tab.
 
 ## Analysis and limits
 

@@ -7,7 +7,8 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { emptyState, fail, object, profilePatch, jobPatch, createJob, documentPatch, validateImport, vaultValue, matchJob, draftDocument } from './lib/model.mjs';
 import { extractResume } from './lib/resume.mjs';
-import { aiConfiguration, writeAiDraft } from './lib/ai.mjs';
+import { writeAiDraft, validateAiSettings, resolveAiSettings, describeAiSettings } from './lib/ai.mjs';
+import { createAutofillService } from './lib/autofill.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const mime = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.json':'application/json'};
@@ -25,7 +26,7 @@ async function json(req) {
 }
 function sameSecret(a,b) { const aa=Buffer.from(a),bb=Buffer.from(b);return aa.length===bb.length&&timingSafeEqual(aa,bb); }
 
-export function createApp({dbPath=process.env.AMPLOY_DB||resolve(root,'data/amploy.sqlite'),publicDir=resolve(root,'public')}={}) {
+export function createApp({dbPath=process.env.AMPLOY_DB||resolve(root,'data/amploy.sqlite'),publicDir=resolve(root,'public'),env=process.env}={}) {
   mkdirSync(dirname(dbPath),{recursive:true,mode:0o700});
   const db=new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
@@ -36,6 +37,10 @@ export function createApp({dbPath=process.env.AMPLOY_DB||resolve(root,'data/ampl
   const token=query.get('extensionToken').value;
   const read=()=>JSON.parse(query.get('state').value);
   const write=(state)=>put.run('state',JSON.stringify(state));
+  const localAi=()=>{const row=query.get('aiSettings');return row?JSON.parse(row.value):null;};
+  const aiConfig=()=>resolveAiSettings(localAi(),env);
+  const aiDescription=()=>describeAiSettings(localAi(),env);
+  const answerQuestions=createAutofillService();
   const server=http.createServer(async(req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
@@ -60,15 +65,27 @@ export function createApp({dbPath=process.env.AMPLOY_DB||resolve(root,'data/ampl
       const extension=typeof origin==='string'&&/^chrome-extension:\/\/[a-p]{32}$/.test(origin);
       if(origin && origin!==`http://${host}` && origin!==`https://${host}` && !extension)fail('This origin is not allowed.',403);
       if(extension) {
-        if(!((path==='/api/profile'&&['GET','OPTIONS'].includes(method))||(path==='/api/jobs'&&['POST','OPTIONS'].includes(method))))fail('This endpoint is not available to extensions.',403);
+        if(!((['/api/profile','/api/capabilities'].includes(path)&&['GET','OPTIONS'].includes(method))||(['/api/jobs','/api/autofill/answers'].includes(path)&&['POST','OPTIONS'].includes(method))))fail('This endpoint is not available to extensions.',403);
         res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');
         if(method==='OPTIONS') {
           res.setHeader('Access-Control-Allow-Methods','GET, POST');res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');res.writeHead(204);res.end();return;
         }
         if(!sameSecret(req.headers.authorization||'',`Bearer ${token}`))fail('Pair the extension using the token from Settings.',401);
       } else if(method==='OPTIONS') {res.writeHead(204);res.end();return;}
+      if(path==='/api/autofill/answers'&&!sameSecret(req.headers.authorization||'',`Bearer ${token}`))fail('Pair the extension using the token from Settings.',401);
       if(path==='/api/state'&&method==='GET')return send(res,200,read());
-      if(path==='/api/capabilities'&&method==='GET')return send(res,200,{aiConfigured:Boolean(process.env.APPLY_STUDIO_AI_API_KEY),draftMode:process.env.APPLY_STUDIO_AI_API_KEY?'AI provider':'Local templates'});
+      if(path==='/api/capabilities'&&method==='GET'){const {configured}=aiDescription();return send(res,200,{aiConfigured:configured,draftMode:configured?'AI provider':'Local templates'});}
+      if(path==='/api/ai-settings'&&method==='GET')return send(res,200,aiDescription());
+      if(path==='/api/ai-settings'&&method==='PUT'){
+        if(env.APPLY_STUDIO_AI_API_KEY)fail('AI is configured through environment variables. Update or remove those settings first.',409);
+        const settings=validateAiSettings(await json(req),localAi()||{});put.run('aiSettings',JSON.stringify(settings));return send(res,200,aiDescription());
+      }
+      if(path==='/api/ai-settings'&&method==='DELETE'){
+        db.prepare('DELETE FROM app WHERE key=?').run('aiSettings');return send(res,200,aiDescription());
+      }
+      if(path==='/api/autofill/answers'&&method==='POST'){
+        const request=await json(req);return send(res,200,await answerQuestions(request,read().profile,aiConfig()));
+      }
       if(path==='/api/profile'&&method==='GET')return send(res,200,read().profile);
       if(path==='/api/extension-token'&&method==='GET')return send(res,200,{token});
       if(path==='/api/export'&&method==='GET')return send(res,200,{schemaVersion:1,...read()});
@@ -106,7 +123,7 @@ export function createApp({dbPath=process.env.AMPLOY_DB||resolve(root,'data/ampl
       }
       if(path==='/api/documents'&&method==='POST') {
         const input=object(await json(req)),state=read(),job=state.jobs.find(j=>j.id===input.jobId);if(!job)fail('Job not found.',404);
-        const doc=draftDocument(state.profile,job,input.type),config=aiConfiguration();
+        const doc=draftDocument(state.profile,job,input.type),config=aiConfig();
         doc.generation=config?'AI draft':'Local template';
         if(config)doc.content=await writeAiDraft(state.profile,job,input.type,config);
         // An AI request may take time. Re-read state to retain unrelated edits made meanwhile.

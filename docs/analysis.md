@@ -66,3 +66,11 @@ The extension manifest registers a background service worker, a drawer host on m
 The reconstruction's tests validate its own behavior. They do not prove that it matches every behavior of the original service.
 
 An independently written optional OpenAI-compatible adapter adds AI resume/letter drafting when the user supplies their own key and model. It does not reproduce Amploy's private prompts, models, scoring, or quality controls. The default remains local deterministic drafting; only the adapter protocol was tested locally, not a real hosted model response.
+
+## Version 0.2: automatic application assistance
+
+The public homepage was fetched again after the user's feedback. It still advertises “Name, phone, work history, essays” and “Autofill from your profile.” The original 0.1 reconstruction's manual contact-only popup did not cover that workflow. Version 0.2 adds independently implemented automatic page detection, saved personal-field filling, AI-assisted factual work-history fields and paragraph answers, later-step observation, preservation of user edits, and an on-page pause/retry/undo panel. The provider can now be configured in the application's AI assistant screen. This is a requested behavior improvement, not a claim that the original private algorithm was recovered.
+
+The extension's service worker brokers token-authenticated calls to the local server. Only question labels and limited job context are sent with the professional profile to a user-configured AI service; existing form values and vault data are excluded. Empty unknown legal, demographic, or credential fields are not answered by the model. Provider errors and unknown facts leave fields for the user. Request caching prevents identical batches from repeatedly calling the provider within its bounded cache lifetime.
+
+The initial reconstruction table above records the original 0.1 scope. The previous manual-only autofill limitation is superseded by 0.2. Third-party portal compatibility, custom controls, and actual model factual accuracy still require user review; automatic detection does not guarantee every field can be filled.

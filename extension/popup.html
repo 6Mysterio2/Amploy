@@ -17,7 +17,7 @@
       </form>
     </section>
     <section id="fill" class="panel" hidden>
-      <h2>Review first. Fill second.</h2><p>Match your profile to empty fields on this page. Passwords and sensitive identity fields are excluded. Nothing is submitted.</p>
+      <h2>Automatic assistance is available</h2><p>When enabled under Connect, personal details and AI answers fill automatically on application pages. You can also preview contact details manually below.</p>
       <button id="preview-button" class="primary">Preview suggestions</button>
       <div id="suggestions" aria-live="polite"></div>
       <button id="fill-button" class="primary" hidden>Fill selected fields</button>
@@ -28,10 +28,11 @@
       <form id="connection-form">
         <label>Server URL<input name="baseURL" value="http://127.0.0.1:3000" required></label>
         <label>Pairing token<input name="token" type="password" autocomplete="off" required></label>
-        <button type="submit" class="primary">Save &amp; test connection</button>
+        <label class="suggestion"><input name="autoAssist" type="checkbox" checked>Automatic assistance on application pages</label><p class="fine">Fills saved personal details and drafts open questions using the provider configured in the app. Question labels and limited job context are sent with your resume. Existing writing is preserved. Nothing is submitted.</p><button type="submit" class="primary">Save &amp; test connection</button>
       </form>
-      <p class="fine">Only localhost:3000 or 127.0.0.1:3000 is supported. The token stays in this extension’s local storage. This extension does not connect to the original Amploy service.</p>
+      <p class="fine">Use an HTTP localhost or 127.0.0.1 server (default port 3000). The token stays in this extension’s local storage. This extension does not connect to the original Amploy service.</p>
     </section>
+    <button id="site-toggle" type="button">Pause assistance on this site</button>
     <div id="status" role="status" aria-live="polite"></div>
   </main>
   <footer>Personal workspace · No analytics · No auto-submit</footer>

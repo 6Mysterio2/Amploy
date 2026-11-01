@@ -6,7 +6,7 @@ const status = (message, error = false) => {
   $('#status').textContent = message;
   $('#status').className = error ? 'error' : 'success';
 };
-let settings = {baseURL: 'http://127.0.0.1:3000', token: ''};
+let settings = {baseURL: 'http://127.0.0.1:3000', token: '',autoAssist:true,pausedSites:[]};
 let preview = null;
 
 function panel(name) {
@@ -50,12 +50,12 @@ $('#connection-form').addEventListener('submit', event => {
   event.preventDefault();
   run(event.submitter, async () => {
     const data = new FormData(event.target);
-    const next = {baseURL: validateBaseURL(data.get('baseURL').trim()), token: data.get('token').trim()};
+    const next = {...settings,baseURL: validateBaseURL(data.get('baseURL').trim()), token: data.get('token').trim(),autoAssist:data.has('autoAssist')};
     if (!next.token) throw new Error('Enter your pairing token.');
     settings = next;
     await api('/api/profile');
     await chrome.storage.local.set({applyStudioConnection: settings});
-    status('Connected. You can now save jobs and review profile suggestions.');
+    status('Connected. Automatic assistance follows your saved setting. Configure AI in the app for paragraph answers, then refresh your application tab.');
   });
 });
 
@@ -126,5 +126,10 @@ chrome.storage.local.get('applyStudioConnection').then(data => {
   const form = $('#connection-form');
   form.elements.baseURL.value = settings.baseURL;
   form.elements.token.value = settings.token;
+  form.elements.autoAssist.checked = settings.autoAssist!==false;
+  updateSiteButton();
   if (!settings.token) panel('connect');
 }).catch(() => status('Could not load connection settings.', true));
+
+async function updateSiteButton(){try{const tab=await currentTab();const site=new URL(tab.url).hostname;$('#site-toggle').textContent=settings.pausedSites?.includes(site)?'Resume assistance on this site':'Pause assistance on this site';}catch{$('#site-toggle').hidden=true;}}
+$('#site-toggle').addEventListener('click',event=>run(event.currentTarget,async()=>{const tab=await currentTab(),site=new URL(tab.url).hostname;const sites=new Set(settings.pausedSites||[]);if(sites.has(site))sites.delete(site);else sites.add(site);settings={...settings,pausedSites:[...sites]};await chrome.storage.local.set({applyStudioConnection:settings});await updateSiteButton();status(sites.has(site)?'Site paused.':'Site resumed.');}));

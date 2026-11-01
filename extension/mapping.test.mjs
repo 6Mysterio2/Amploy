@@ -23,7 +23,8 @@ test('does not invent missing data, credentials, eligibility or sensitive answer
 test('server pairing is limited to declared loopback origins', () => {
   assert.equal(validateBaseURL('http://127.0.0.1:3000'),'http://127.0.0.1:3000');
   assert.equal(validateBaseURL('http://localhost:3000/'),'http://localhost:3000');
-  for (const url of ['https://example.com','http://localhost:4000','http://localhost:3000/api','http://username:password@localhost:3000','http://localhost:3000/?x=1','http://localhost.evil.test:3000']) {
+  assert.equal(validateBaseURL('http://localhost:4000'),'http://localhost:4000');
+  for (const url of ['https://example.com','http://localhost:3000/api','http://username:password@localhost:3000','http://localhost:3000/?x=1','http://localhost.evil.test:3000']) {
     assert.throws(() => validateBaseURL(url));
   }
 });
